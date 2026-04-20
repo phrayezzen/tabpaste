@@ -43,14 +43,14 @@ export async function POST(request: NextRequest) {
     // Fire-and-forget: trigger Modal processing
     const modalEndpoint = process.env.MODAL_ENDPOINT_URL;
     if (modalEndpoint) {
+      // Build URL with query parameters (Modal FastAPI expects query params)
+      const url = new URL(modalEndpoint);
+      url.searchParams.set("job_id", job.id);
+      url.searchParams.set("youtube_url", youtubeUrl.trim());
+
       // Don't await - fire and forget
-      fetch(modalEndpoint, {
+      fetch(url.toString(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          job_id: job.id,
-          youtube_url: youtubeUrl.trim(),
-        }),
       }).catch((err) => {
         console.error("Failed to trigger Modal:", err);
       });
