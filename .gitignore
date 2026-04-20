@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.local.example
+
+# alphaTab fonts (copied from node_modules)
+/public/font/
 
 # vercel
 .vercel
