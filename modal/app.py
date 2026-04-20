@@ -21,7 +21,7 @@ image = (
     .apt_install("ffmpeg")
     .pip_install(
         "basic-pitch>=0.3.0",
-        "yt-dlp",
+        "httpx",
         "supabase>=2.0.0",
         "numpy",
         "fastapi[standard]",
@@ -79,34 +79,66 @@ def update_job_status(job_id: str, status: str, detail: Optional[str] = None, er
 
 def download_audio(youtube_url: str, tmpdir: str) -> tuple[str, str]:
     """
-    Download audio from YouTube URL.
+    Download audio from YouTube URL using cobalt.tools API.
 
     Returns: (audio_path, video_title)
     """
-    import yt_dlp
+    import subprocess
+    import httpx
+    import re
 
-    output_template = os.path.join(tmpdir, "audio.%(ext)s")
+    # Extract video ID for title fallback
+    video_id_match = re.search(r'(?:v=|youtu\.be/|shorts/)([a-zA-Z0-9_-]+)', youtube_url)
+    video_id = video_id_match.group(1) if video_id_match else "unknown"
 
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "wav",
-        }],
-        "postprocessor_args": [
-            "-ar", "22050",  # 22050 Hz sample rate (basic-pitch default)
-            "-ac", "1",      # Mono
-        ],
-        "outtmpl": output_template,
-        "quiet": True,
-        "no_warnings": True,
-    }
+    # Use cobalt.tools API to get audio URL
+    cobalt_response = httpx.post(
+        "https://api.cobalt.tools/",
+        json={
+            "url": youtube_url,
+            "downloadMode": "audio",
+            "audioFormat": "wav",
+        },
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        timeout=60.0,
+    )
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(youtube_url, download=True)
-        title = info.get("title", "Untitled")
+    if cobalt_response.status_code != 200:
+        raise ValueError(f"Cobalt API error: {cobalt_response.text}")
 
+    result = cobalt_response.json()
+
+    if result.get("status") == "error":
+        raise ValueError(f"Cobalt error: {result.get('error', {}).get('code', 'unknown')}")
+
+    # Get the audio URL
+    audio_url = result.get("url")
+    if not audio_url:
+        raise ValueError("No audio URL returned from Cobalt")
+
+    # Download the audio file
+    audio_download = os.path.join(tmpdir, "audio_download")
+    audio_response = httpx.get(audio_url, follow_redirects=True, timeout=300.0)
+    with open(audio_download, "wb") as f:
+        f.write(audio_response.content)
+
+    # Convert to WAV with correct sample rate using ffmpeg
     audio_path = os.path.join(tmpdir, "audio.wav")
+    subprocess.run([
+        "ffmpeg", "-y", "-i", audio_download,
+        "-ar", "22050",  # 22050 Hz sample rate (basic-pitch default)
+        "-ac", "1",      # Mono
+        audio_path
+    ], check=True, capture_output=True)
+
+    # Try to get title from filename or use video ID
+    title = result.get("filename", f"YouTube Video {video_id}")
+    if title.endswith(".wav") or title.endswith(".mp3"):
+        title = title.rsplit(".", 1)[0]
+
     return audio_path, title
 
 
