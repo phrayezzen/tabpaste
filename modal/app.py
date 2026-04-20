@@ -20,10 +20,11 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("ffmpeg")
     .pip_install(
-        "basic-pitch>=0.6.0",
-        "yt-dlp>=2024.0.0",
+        "basic-pitch>=0.3.0",
+        "yt-dlp",
         "supabase>=2.0.0",
-        "numpy>=1.26.0",
+        "numpy",
+        "fastapi[standard]",
     )
 )
 
