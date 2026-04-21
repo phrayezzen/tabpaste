@@ -21,7 +21,7 @@ image = (
     .apt_install("ffmpeg")
     .pip_install(
         "basic-pitch>=0.3.0",
-        "pytubefix",
+        "yt-dlp",
         "supabase>=2.0.0",
         "numpy",
         "fastapi[standard]",
@@ -79,32 +79,33 @@ def update_job_status(job_id: str, status: str, detail: Optional[str] = None, er
 
 def download_audio(youtube_url: str, tmpdir: str) -> tuple[str, str]:
     """
-    Download audio from YouTube URL using pytubefix.
+    Download audio from YouTube URL using yt-dlp.
 
     Returns: (audio_path, video_title)
     """
     import subprocess
-    from pytubefix import YouTube
+    import json
 
-    # Download audio stream
-    yt = YouTube(youtube_url)
-    title = yt.title or "Untitled"
+    # Get video info first (for title)
+    info_result = subprocess.run([
+        "yt-dlp",
+        "--dump-json",
+        "--no-download",
+        youtube_url,
+    ], capture_output=True, text=True, check=True)
 
-    # Get best audio stream
-    audio_stream = yt.streams.filter(only_audio=True).order_by("abr").desc().first()
-    if not audio_stream:
-        raise ValueError("No audio stream available for this video")
+    video_info = json.loads(info_result.stdout)
+    title = video_info.get("title", "Untitled")
 
-    # Download to temp directory
-    downloaded_file = audio_stream.download(output_path=tmpdir, filename="audio_raw")
-
-    # Convert to WAV with correct sample rate using ffmpeg
+    # Download audio and convert to WAV in one step
     audio_path = os.path.join(tmpdir, "audio.wav")
     subprocess.run([
-        "ffmpeg", "-y", "-i", downloaded_file,
-        "-ar", "22050",  # 22050 Hz sample rate (basic-pitch default)
-        "-ac", "1",      # Mono
-        audio_path
+        "yt-dlp",
+        "-x",  # Extract audio
+        "--audio-format", "wav",
+        "--postprocessor-args", "ffmpeg:-ar 22050 -ac 1",  # 22050 Hz mono
+        "-o", audio_path,
+        youtube_url,
     ], check=True, capture_output=True)
 
     return audio_path, title
